@@ -56,28 +56,61 @@ def scanBlocks(chain):
         return
     
         #YOUR CODE HERE
-        w3 = connectTo('avax' if chain == 'source' else 'bsc')
-        contracts = getContractInfo(chain)
-        contract = w3.eth.contract(
-            address=contracts[f'{chain}_contract_address'], 
-            abi=contracts[f'{chain}_abi']
-        )
+      
+    if chain == 'source':
+        web3 = connectTo('avax')
+        contract_info = getContractInfo('source')
+    elif chain == 'destination':
+        web3 = connectTo('bsc')
+        contract_info = getContractInfo('destination')
 
-        for block_num in range(w3.eth.block_number - 5, w3.eth.block_number + 1):
-            for tx in w3.eth.get_block(block_num, full_transactions=True).transactions:
-                try:
-                    receipt = w3.eth.get_transaction_receipt(tx.hash)
-                    events = contract.events.Deposit().processReceipt(receipt) if chain == 'source' else contract.events.Unwrap().processReceipt(receipt)
-                    for event in events:
-                        other_chain = 'bsc' if chain == 'source' else 'avax'
-                        other_contract = connectTo(other_chain).eth.contract(
-                            address=contracts[f"{'destination' if chain == 'source' else 'source'}_contract_address"], 
-                            abi=contracts[f"{'destination' if chain == 'source' else 'source'}_abi"]
-                        )
-                        func = other_contract.functions.wrap if chain == 'source' else other_contract.functions.withdraw
-                        func(event.args.tokenAddress, event.args.amount, event.args.recipient).transact(
-                            {'from': contracts['warden_private_key']}
-                        )
-                        print(f"Transaction sent for {event.event}: {event.args}")
-                except Exception as e:
-                    print(f"Error processing tx {tx.hash.hex()}: {e}")
+    contract = web3.eth.contract(address=contract_info['address'], abi=contract_info['abi'])
+    
+    # Define block range
+    latest_block = web3.eth.block_number
+    start_block = max(latest_block - 5, 0)
+    end_block = latest_block
+
+    print(f"Scanning blocks {start_block} to {end_block} on {chain} chain.")
+
+    # Define the event to scan for
+    if chain == 'source':
+        event_name = "Deposit"
+        action = "wrap"
+    elif chain == 'destination':
+        event_name = "Unwrap"
+        action = "withdraw"
+
+    event_filter = getattr(contract.events, event_name).create_filter(fromBlock=start_block, toBlock=end_block)
+    events = event_filter.get_all_entries()
+
+    for evt in events:
+        token = evt.args['token']
+        recipient = evt.args['recipient']
+        amount = evt.args['amount']
+
+        print(f"Event detected: {event_name} - Token: {token}, Recipient: {recipient}, Amount: {amount}")
+
+        # Perform the cross-chain action
+        if chain == 'source':
+            print(f"Calling {action} on destination chain for token {token}, recipient {recipient}, amount {amount}")
+            destination_web3 = connectTo('bsc')
+            destination_info = getContractInfo('destination')
+            destination_contract = destination_web3.eth.contract(address=destination_info['address'], abi=destination_info['abi'])
+            send_transaction(
+                destination_web3,
+                destination_contract.functions.wrap,
+                [token, recipient, amount],
+                destination_info['private_key']
+            )
+        elif chain == 'destination':
+            print(f"Calling {action} on source chain for token {token}, recipient {recipient}, amount {amount}")
+            source_web3 = connectTo('avax')
+            source_info = getContractInfo('source')
+            source_contract = source_web3.eth.contract(address=source_info['address'], abi=source_info['abi'])
+            send_transaction(
+                source_web3,
+                source_contract.functions.withdraw,
+                [token, recipient, amount],
+                source_info['private_key']
+            )
