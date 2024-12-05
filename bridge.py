@@ -105,7 +105,6 @@ def scanBlocks(chain):
     contract_abi = contract_info["abi"]
     contract = w3.eth.contract(address=contract_address, abi=contract_abi)
 
-    # Scan the last 5 blocks
     end_block = w3.eth.get_block_number()
     start_block = max(0, end_block - 4)  # Ensure we don't go below block 0
     print(f"Scanning {chain} chain for {event_name} events from blocks {start_block} to {end_block}...")
@@ -117,14 +116,18 @@ def scanBlocks(chain):
         for evt in events:
             print(f"Found {event_name} event: {evt}")
 
-            token = evt.args["token"]
-            recipient = evt.args["recipient"]
-            amount = evt.args["amount"]
-
             if chain == "source" and event_name == "Deposit":
+                token = evt.args["token"]
+                recipient = evt.args["recipient"]
+                amount = evt.args["amount"]
                 handle_wrap_on_destination(token, recipient, amount)
             elif chain == "destination" and event_name == "Unwrap":
-                handle_withdraw_on_source(token, recipient, amount)
+                underlying_token = evt.args["underlying_token"]
+                wrapped_token = evt.args["wrapped_token"]
+                frm = evt.args["frm"]
+                to = evt.args["to"]
+                amount = evt.args["amount"]
+                handle_withdraw_on_source(underlying_token, to, amount)
 
     except Exception as e:
         print(f"Error scanning blocks on {chain}: {e}")
@@ -157,12 +160,8 @@ def handle_wrap_on_destination(token, recipient, amount):
     except Exception as e:
         print(f"Error calling wrap on destination chain: {e}")
 
-
-def handle_withdraw_on_source(token, recipient, amount):
-    """
-    Handles an Unwrap event by calling the withdraw function on the source chain.
-    """
-    print(f"Calling withdraw on source chain for token={token}, recipient={recipient}, amount={amount}...")
+def handle_withdraw_on_source(underlying_token, recipient, amount):
+    print(f"Calling withdraw on source chain for underlying_token={underlying_token}, recipient={recipient}, amount={amount}...")
     try:
         source_w3 = connectTo(source_chain)
         source_contract_info = getContractInfo("source")
@@ -174,7 +173,7 @@ def handle_withdraw_on_source(token, recipient, amount):
         tx_hash = send_transaction(
             source_w3,
             source_contract.functions.withdraw,
-            [token, recipient, amount],
+            [underlying_token, recipient, amount],
             account,
             private_key
         )
