@@ -10,7 +10,7 @@ source_chain = 'avax'
 destination_chain = 'bsc'
 contract_info = "contract_info.json"
 
-# Replace with your private key
+
 PRIVATE_KEY = "f447cac1243f3e6eaa439a774c3fd4203166ff2859b115d40670b2da163a018a"
 
 
