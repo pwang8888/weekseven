@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-# Constants
+
 source_chain = 'avax'
 destination_chain = 'bsc'
 contract_info = "contract_info.json"
